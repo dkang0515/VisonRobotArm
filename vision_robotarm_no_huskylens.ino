@@ -2,6 +2,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include "HUSKYLENS.h"
 
 #if defined(ARDUINO_OpenRB)
   #define DXL_SERIAL Serial1
@@ -17,7 +18,11 @@
   #define BDPIN_DXL_PWR_EN 31
 #endif
 
+#define HUSKY_SERIAL Serial2
+static const uint32_t HUSKY_BAUD = 9600;
+
 Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
+HUSKYLENS huskylens;
 
 // ====================== IDs ======================
 static const uint8_t ID_BASE         = 1;
@@ -99,10 +104,19 @@ static bool gripper_closing = false;
 static bool gripper_moving  = false;
 
 // ====================== HuskyLens width trigger (simulated input) ======================
+static const int16_t HUSKY_CENTER_X = 160;
+static const int16_t HUSKY_CENTER_Y = 120;
+static int16_t husky_x = 0;
+static int16_t husky_y = 0;
+static int16_t husky_x_err = 0;
+static int16_t husky_y_err = 0;
 static int16_t husky_width = 0;
 static const int16_t HUSKY_WIDTH_TRIGGER = 240;
 static const uint8_t HUSKY_WIDTH_COUNT = 3;
 static uint8_t husky_width_ctr = 0;
+static bool husky_has_block = false;
+static unsigned long husky_last_seen_ms = 0;
+static const unsigned long HUSKY_TIMEOUT_MS = 1200;
 
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
@@ -813,6 +827,12 @@ static void processLine(char* s){
     char* w = strtok(NULL," ");
     if (!w){ PC_SERIAL.println("usage: width <val>"); return; }
     husky_width = (int16_t)atoi(w);
+    husky_x = HUSKY_CENTER_X;
+    husky_y = HUSKY_CENTER_Y;
+    husky_x_err = 0;
+    husky_y_err = 0;
+    husky_last_seen_ms = millis();
+    husky_has_block = true;
     PC_SERIAL.print("width set: ");
     PC_SERIAL.println(husky_width);
     return;
@@ -853,6 +873,9 @@ void setup(){
   PC_SERIAL.begin(115200);
   while(!PC_SERIAL){}
 
+  HUSKY_SERIAL.begin(HUSKY_BAUD);
+  bool husky_ok = huskylens.begin(HUSKY_SERIAL);
+
   pinMode(BDPIN_DXL_PWR_EN, OUTPUT);
   digitalWrite(BDPIN_DXL_PWR_EN, HIGH);
   delay(300);
@@ -869,10 +892,48 @@ void setup(){
   PC_SERIAL.println(ok ? "Boot OK (zero set)" : "Boot OK (zero fail)");
   printHelp();
 
+  PC_SERIAL.print("HUSKYLENS: ");
+  PC_SERIAL.println(husky_ok ? "OK" : "FAIL");
   PC_SERIAL.print("KEEP_VERTICAL: ");
   PC_SERIAL.println(KEEP_VERTICAL ? "ON" : "OFF");
   PC_SERIAL.print("WP_OFFSET_DEG: ");
   PC_SERIAL.println(WP_OFFSET_DEG, 3);
+}
+
+static void updateHuskyLens(){
+  if (!huskylens.request()) {
+    husky_has_block = false;
+    return;
+  }
+  if (!huskylens.isLearned() || !huskylens.available()) {
+    husky_has_block = false;
+    return;
+  }
+
+  HUSKYLENSResult result = huskylens.read();
+  if (result.command == COMMAND_RETURN_BLOCK) {
+    husky_x = result.xCenter;
+    husky_y = result.yCenter;
+    husky_x_err = husky_x - HUSKY_CENTER_X;
+    husky_y_err = husky_y - HUSKY_CENTER_Y;
+    husky_width = result.width;
+    husky_last_seen_ms = millis();
+    husky_has_block = true;
+  } else {
+    husky_has_block = false;
+  }
+}
+
+static void handleHuskyTimeout(){
+  if (husky_has_block) return;
+  if (millis() - husky_last_seen_ms >= HUSKY_TIMEOUT_MS) {
+    husky_width = 0;
+    husky_width_ctr = 0;
+    if (auto_active) {
+      autoStop();
+      PC_SERIAL.println("AUTO stopped: HuskyLens timeout");
+    }
+  }
 }
 
 void loop(){
@@ -887,6 +948,9 @@ void loop(){
     }
   }
 
+  updateHuskyLens();
+  handleHuskyTimeout();
+  
   if (husky_width >= HUSKY_WIDTH_TRIGGER) {
     if (husky_width_ctr < 255) husky_width_ctr++;
   } else if (husky_width_ctr > 0) {
