@@ -86,6 +86,7 @@ static const int16_t GRIPPER_GRIP_RELEASE_CURRENT    = 180; // raw units: grip r
 static const uint8_t GRIPPER_CONTACT_COUNT  = 3;   // consecutive samples for contact
 static const uint8_t GRIPPER_GRIP_COUNT     = 4;   // consecutive samples for grip
 static const float GRIPPER_CLOSE_SIGN = +1.0f;     // +1 if increasing deg closes, -1 otherwise
+static const bool GRIPPER_CONTACT_WHEN_STATIC = true;
 
 static bool gripper_contact = false;
 static bool gripper_grip    = false;
@@ -95,6 +96,13 @@ static bool gripper_contact_prev = false;
 static bool gripper_grip_prev    = false;
 static float gripper_cmd_prev = 0.0f;
 static bool gripper_closing = false;
+static bool gripper_moving  = false;
+
+// ====================== HuskyLens width trigger (simulated input) ======================
+static int16_t husky_width = 0;
+static const int16_t HUSKY_WIDTH_TRIGGER = 240;
+static const uint8_t HUSKY_WIDTH_COUNT = 3;
+static uint8_t husky_width_ctr = 0;
 
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
@@ -209,21 +217,22 @@ static void updateGripperContactGrip(){
     } else if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT && grip_ctr > 0) {
       grip_ctr--;
     }
+  } else {
+    if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT) {
+      grip_ctr = 0;
+      gripper_grip = false;
+    }
+  }
 
+  if (gripper_closing || (GRIPPER_CONTACT_WHEN_STATIC && !gripper_moving)){
     if (cur_abs >= GRIPPER_CONTACT_CURRENT && cur_abs < GRIPPER_GRIP_CURRENT) {
       if (contact_ctr < 255) contact_ctr++;
     } else if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT && contact_ctr > 0) {
       contact_ctr--;
     }
-  } else {
-    if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT) {
-      contact_ctr = 0;
-      gripper_contact = false;
-    }
-    if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT) {
-      grip_ctr = 0;
-      gripper_grip = false;
-    }
+  } else if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT) {
+    contact_ctr = 0;
+    gripper_contact = false;
   }
 
   if (grip_ctr >= GRIPPER_GRIP_COUNT) gripper_grip = true;
@@ -286,6 +295,7 @@ static void writeAllNow(const float q_desired_in[6]){
   for (int i=0;i<6;i++) q_cur[i] = q_next[i];
   float dg = q_cur[J_G] - gripper_cmd_prev;
   gripper_closing = (dg * GRIPPER_CLOSE_SIGN) > 0.01f;
+  gripper_moving = abs(dg) > 0.01f;
   gripper_cmd_prev = q_cur[J_G];
   
   // dual joints (sync)
@@ -557,6 +567,16 @@ static const uint8_t SEQ_PICK=1;
 static uint8_t seq=SEQ_NONE;
 static uint8_t seq_step=0;
 
+// ====================== Auto width->grip state machine ======================
+static const uint8_t AUTO_NONE=0;
+static const uint8_t AUTO_APPROACH=1;
+static const uint8_t AUTO_CLOSE=2;
+static const uint8_t AUTO_LIFT=3;
+static const uint8_t AUTO_RETURN=4;
+static uint8_t auto_state=AUTO_NONE;
+static bool auto_active=false;
+static bool auto_approach_started=false;
+
 static void seqStop(){
   seq=SEQ_NONE;
   seq_step=0;
@@ -572,6 +592,55 @@ static void startMoveSegmented(float base,float sh,float el,float wp,float wy,fl
 static void seqStartPick(){
   seq=SEQ_PICK;
   seq_step=0;
+}
+
+static void autoStop(){
+  auto_active=false;
+  auto_state=AUTO_NONE;
+  auto_approach_started=false;
+  husky_width_ctr=0;
+}
+
+static void autoStart(){
+  auto_active=true;
+  auto_state=AUTO_APPROACH;
+  auto_approach_started=false;
+  husky_width_ctr=0;
+}
+
+static void autoUpdate(){
+  if (!auto_active) return;
+  if (motion_active) return;
+
+  switch (auto_state){
+    case AUTO_APPROACH:
+      if (!auto_approach_started){
+        startMoveSegmented(0,+25,-35,0,0,0, 2000); // DOWN/APPROACH
+        auto_approach_started=true;
+        return;
+      }
+      if (husky_width_ctr >= HUSKY_WIDTH_COUNT){
+        startMoveSegmented(0,+25,-35,0,0,+15, 900); // CLOSE
+        auto_state=AUTO_CLOSE;
+      }
+      break;
+    case AUTO_CLOSE:
+      if (gripper_grip){
+        startMoveSegmented(0,+15,-20,0,0,+15, 1800); // LIFT
+        auto_state=AUTO_LIFT;
+      }
+      break;
+    case AUTO_LIFT:
+      startMoveSegmented(0,0,0,0,0,+15, 1600); // RETURN
+      auto_state=AUTO_RETURN;
+      break;
+    case AUTO_RETURN:
+      autoStop();
+      break;
+    default:
+      autoStop();
+      break;
+  }
 }
 
 static void seqUpdate(){
@@ -617,12 +686,15 @@ static void printHelp(){
   PC_SERIAL.println("  move <j> <deg> <ms>       : segmented move (j=base|sh|el|wp|wy|g)");
   PC_SERIAL.println("  pose home|hover|down      : preset pose (segmented)");
   PC_SERIAL.println("  run pick                  : conservative pick sequence (segmented)");
+  PC_SERIAL.println("  run auto                  : width-triggered auto grip (segmented)");
   PC_SERIAL.println("  stop                      : stop motion/sequence");
+  PC_SERIAL.println("  width <val>               : set HuskyLens width (sim input)");
   PC_SERIAL.println("Note: Serial Monitor line ending = Newline");
 }
 
 static void cmdStop(){
   seqStop();
+  autoStop();
   motion_active=false;
   seg_count=0; seg_idx=0;
   dwell_active=false;
@@ -716,7 +788,23 @@ static void processLine(char* s){
       PC_SERIAL.println("SEQ pick started");
       return;
     }
-    PC_SERIAL.println("run ? (pick)");
+    if (name && !strcmp(name,"auto")){
+      autoStart();
+      PC_SERIAL.println("AUTO width-grip started");
+      return;
+    }
+    PC_SERIAL.println("run ? (pick|auto)");
+    return;
+  }
+
+  // width <val>
+  if (!strncmp(s,"width",5)){
+    strtok(s," ");
+    char* w = strtok(NULL," ");
+    if (!w){ PC_SERIAL.println("usage: width <val>"); return; }
+    husky_width = (int16_t)atoi(w);
+    PC_SERIAL.print("width set: ");
+    PC_SERIAL.println(husky_width);
     return;
   }
 
@@ -789,7 +877,14 @@ void loop(){
     }
   }
 
+  if (husky_width >= HUSKY_WIDTH_TRIGGER) {
+    if (husky_width_ctr < 255) husky_width_ctr++;
+  } else if (husky_width_ctr > 0) {
+    husky_width_ctr--;
+  }
+  updateGripperContactGrip();
   updateGripperContactGrip();
   motionUpdate();
   seqUpdate();
+  autoUpdate();
 }
