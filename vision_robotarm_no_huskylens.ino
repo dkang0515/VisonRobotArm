@@ -88,6 +88,8 @@ static bool gripper_contact = false;
 static bool gripper_grip    = false;
 static uint8_t contact_ctr  = 0;
 static uint8_t grip_ctr     = 0;
+static bool gripper_contact_prev = false;
+static bool gripper_grip_prev    = false;
 
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
@@ -206,6 +208,18 @@ static void updateGripperContactGrip(){
 
   if (abs(cur) < GRIPPER_CONTACT_CURRENT) gripper_contact = false;
   if (abs(cur) < GRIPPER_GRIP_CURRENT) gripper_grip = false;
+
+  if (gripper_contact && !gripper_contact_prev){
+    PC_SERIAL.print("GRIPPER CONTACT: current=");
+    PC_SERIAL.println(cur);
+  }
+  if (gripper_grip && !gripper_grip_prev){
+    PC_SERIAL.print("GRIPPER GRIP: current=");
+    PC_SERIAL.println(cur);
+  }
+
+  gripper_contact_prev = gripper_contact;
+  gripper_grip_prev = gripper_grip;
 }
 
 static bool writeSingleDeg(uint8_t id, int32_t zero, float deg, int8_t dir){
