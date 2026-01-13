@@ -576,6 +576,9 @@ static const uint8_t AUTO_RETURN=4;
 static uint8_t auto_state=AUTO_NONE;
 static bool auto_active=false;
 static bool auto_approach_started=false;
+static float auto_grip_target = 0.0f;
+static const float AUTO_GRIP_STEP_DEG = 2.0f;
+static const unsigned long AUTO_GRIP_STEP_MS = 200;
 
 static void seqStop(){
   seq=SEQ_NONE;
@@ -599,6 +602,7 @@ static void autoStop(){
   auto_state=AUTO_NONE;
   auto_approach_started=false;
   husky_width_ctr=0;
+  auto_grip_target=0.0f;
 }
 
 static void autoStart(){
@@ -606,6 +610,7 @@ static void autoStart(){
   auto_state=AUTO_APPROACH;
   auto_approach_started=false;
   husky_width_ctr=0;
+  auto_grip_target=q_cur[J_G];
 }
 
 static void autoUpdate(){
@@ -620,7 +625,8 @@ static void autoUpdate(){
         return;
       }
       if (husky_width_ctr >= HUSKY_WIDTH_COUNT){
-        startMoveSegmented(0,+25,-35,0,0,+15, 900); // CLOSE
+        auto_grip_target = q_cur[J_G];
+        startMoveSegmented(0,+25,-35,0,0,auto_grip_target, AUTO_GRIP_STEP_MS);
         auto_state=AUTO_CLOSE;
       }
       break;
@@ -628,6 +634,10 @@ static void autoUpdate(){
       if (gripper_grip){
         startMoveSegmented(0,+15,-20,0,0,+15, 1800); // LIFT
         auto_state=AUTO_LIFT;
+      } else {
+        auto_grip_target = clampf(auto_grip_target + (AUTO_GRIP_STEP_DEG * GRIPPER_CLOSE_SIGN),
+                                  LIM_MIN[J_G], LIM_MAX[J_G]);
+        startMoveSegmented(0,+25,-35,0,0,auto_grip_target, AUTO_GRIP_STEP_MS);
       }
       break;
     case AUTO_LIFT:
@@ -882,7 +892,7 @@ void loop(){
   } else if (husky_width_ctr > 0) {
     husky_width_ctr--;
   }
-  updateGripperContactGrip();
+
   updateGripperContactGrip();
   motionUpdate();
   seqUpdate();
