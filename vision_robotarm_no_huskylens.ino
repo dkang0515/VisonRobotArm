@@ -66,8 +66,8 @@ static inline int32_t degToRaw(float deg){
 }
 
 // ====================== Soft limits (deg, relative) ======================
-static const float LIM_MIN[6] = { -60, -45, -60, -60, -90, -20 };
-static const float LIM_MAX[6] = { +60, +45, +60, +60, +90, +20 };
+static const float LIM_MIN[6] = { -60, -45, -60, -60, -90, -40 };
+static const float LIM_MAX[6] = { +60, +45, +60, +60, +90, +40 };
 
 // ====================== Power-safe: per-joint profile (vel/acc) ======================
 static const uint32_t PROF_VEL[6] = { 25, 14, 14, 22, 22, 18 };
