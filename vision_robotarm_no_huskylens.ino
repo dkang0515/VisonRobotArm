@@ -76,6 +76,19 @@ static const uint32_t PROF_ACC[6] = {  8,  4,  4,  6,  6,  5 };
 // ====================== Power-safe: max step per update (deg) ======================
 static const float MAX_STEP_DEG[6] = { 2.0f, 1.0f, 1.0f, 1.5f, 1.5f, 1.0f };
 
+// ====================== Gripper current-based contact/grip detection ======================
+// NOTE: PRESENT_CURRENT is in raw units. Convert to mA if you know your model's unit scale.
+// Tune these thresholds for your hardware and payload.
+static const int16_t GRIPPER_CONTACT_CURRENT = 120; // raw units: contact detected
+static const int16_t GRIPPER_GRIP_CURRENT    = 220; // raw units: firm grip detected
+static const uint8_t GRIPPER_CONTACT_COUNT  = 3;   // consecutive samples for contact
+static const uint8_t GRIPPER_GRIP_COUNT     = 4;   // consecutive samples for grip
+
+static bool gripper_contact = false;
+static bool gripper_grip    = false;
+static uint8_t contact_ctr  = 0;
+static uint8_t grip_ctr     = 0;
+
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
 static const unsigned long SEG_DWELL_MS   = 150;
@@ -171,6 +184,28 @@ static bool readZero(uint8_t id, int32_t &zero_out){
   if (dxl.getLastLibErrCode() != 0) return false;
   zero_out = p;
   return true;
+}
+
+static int16_t readGripperCurrent(){
+  int16_t cur = (int16_t)dxl.readControlTableItem(PRESENT_CURRENT, ID_GRIPPER);
+  if (dxl.getLastLibErrCode() != 0) return 0;
+  return cur;
+}
+
+static void updateGripperContactGrip(){
+  int16_t cur = readGripperCurrent();
+
+  if (abs(cur) >= GRIPPER_CONTACT_CURRENT) contact_ctr++;
+  else if (contact_ctr > 0) contact_ctr--;
+
+  if (abs(cur) >= GRIPPER_GRIP_CURRENT) grip_ctr++;
+  else if (grip_ctr > 0) grip_ctr--;
+
+  if (contact_ctr >= GRIPPER_CONTACT_COUNT) gripper_contact = true;
+  if (grip_ctr >= GRIPPER_GRIP_COUNT) gripper_grip = true;
+
+  if (abs(cur) < GRIPPER_CONTACT_CURRENT) gripper_contact = false;
+  if (abs(cur) < GRIPPER_GRIP_CURRENT) gripper_grip = false;
 }
 
 static bool writeSingleDeg(uint8_t id, int32_t zero, float deg, int8_t dir){
@@ -440,7 +475,11 @@ static void initMotorsPowerSafe(){
 
   for (uint8_t i=0;i<sizeof(ids);i++){
     dxl.torqueOff(ids[i]);
-    dxl.setOperatingMode(ids[i], OP_POSITION);
+    if (ids[i] == ID_GRIPPER) {
+      dxl.setOperatingMode(ids[i], OP_CURRENT_BASED_POSITION);
+    } else {
+      dxl.setOperatingMode(ids[i], OP_POSITION);
+    }
     delay(20);
   }
 
@@ -706,7 +745,7 @@ void loop(){
     }
   }
 
+  updateGripperContactGrip();
   motionUpdate();
   seqUpdate();
 }
-
