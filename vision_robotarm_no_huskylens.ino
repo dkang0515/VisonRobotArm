@@ -81,8 +81,11 @@ static const float MAX_STEP_DEG[6] = { 2.0f, 1.0f, 1.0f, 1.5f, 1.5f, 1.0f };
 // Tune these thresholds for your hardware and payload.
 static const int16_t GRIPPER_CONTACT_CURRENT = 120; // raw units: contact detected
 static const int16_t GRIPPER_GRIP_CURRENT    = 220; // raw units: firm grip detected
+static const int16_t GRIPPER_CONTACT_RELEASE_CURRENT = 90;  // raw units: contact release
+static const int16_t GRIPPER_GRIP_RELEASE_CURRENT    = 180; // raw units: grip release
 static const uint8_t GRIPPER_CONTACT_COUNT  = 3;   // consecutive samples for contact
 static const uint8_t GRIPPER_GRIP_COUNT     = 4;   // consecutive samples for grip
+static const float GRIPPER_CLOSE_SIGN = +1.0f;     // +1 if increasing deg closes, -1 otherwise
 
 static bool gripper_contact = false;
 static bool gripper_grip    = false;
@@ -90,6 +93,8 @@ static uint8_t contact_ctr  = 0;
 static uint8_t grip_ctr     = 0;
 static bool gripper_contact_prev = false;
 static bool gripper_grip_prev    = false;
+static float gripper_cmd_prev = 0.0f;
+static bool gripper_closing = false;
 
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
@@ -196,18 +201,40 @@ static int16_t readGripperCurrent(){
 
 static void updateGripperContactGrip(){
   int16_t cur = readGripperCurrent();
+  int16_t cur_abs = abs(cur);
 
-  if (abs(cur) >= GRIPPER_CONTACT_CURRENT) contact_ctr++;
-  else if (contact_ctr > 0) contact_ctr--;
+  if (gripper_closing){
+    if (cur_abs >= GRIPPER_GRIP_CURRENT) {
+      if (grip_ctr < 255) grip_ctr++;
+    } else if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT && grip_ctr > 0) {
+      grip_ctr--;
+    }
 
-  if (abs(cur) >= GRIPPER_GRIP_CURRENT) grip_ctr++;
-  else if (grip_ctr > 0) grip_ctr--;
+    if (cur_abs >= GRIPPER_CONTACT_CURRENT && cur_abs < GRIPPER_GRIP_CURRENT) {
+      if (contact_ctr < 255) contact_ctr++;
+    } else if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT && contact_ctr > 0) {
+      contact_ctr--;
+    }
+  } else {
+    if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT) {
+      contact_ctr = 0;
+      gripper_contact = false;
+    }
+    if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT) {
+      grip_ctr = 0;
+      gripper_grip = false;
+    }
+  }
 
-  if (contact_ctr >= GRIPPER_CONTACT_COUNT) gripper_contact = true;
   if (grip_ctr >= GRIPPER_GRIP_COUNT) gripper_grip = true;
+  if (cur_abs <= GRIPPER_GRIP_RELEASE_CURRENT) gripper_grip = false;
 
-  if (abs(cur) < GRIPPER_CONTACT_CURRENT) gripper_contact = false;
-  if (abs(cur) < GRIPPER_GRIP_CURRENT) gripper_grip = false;
+  if (!gripper_grip){
+    if (contact_ctr >= GRIPPER_CONTACT_COUNT) gripper_contact = true;
+    if (cur_abs <= GRIPPER_CONTACT_RELEASE_CURRENT) gripper_contact = false;
+  } else {
+    gripper_contact = false;
+  }
 
   if (gripper_contact && !gripper_contact_prev){
     PC_SERIAL.print("GRIPPER CONTACT: current=");
@@ -257,7 +284,10 @@ static void writeAllNow(const float q_desired_in[6]){
 
   // update internal
   for (int i=0;i<6;i++) q_cur[i] = q_next[i];
-
+  float dg = q_cur[J_G] - gripper_cmd_prev;
+  gripper_closing = (dg * GRIPPER_CLOSE_SIGN) > 0.01f;
+  gripper_cmd_prev = q_cur[J_G];
+  
   // dual joints (sync)
   shoulder.writeDeg(q_cur[J_SH]);
   elbow.writeDeg(q_cur[J_EL]);
