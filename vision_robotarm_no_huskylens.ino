@@ -89,7 +89,7 @@ using namespace ControlTableItem;
 // 만약 동작이 반대로 나오면 +1로 바꾸면 됨.
 static bool  KEEP_VERTICAL = true;
 static float WP_OFFSET_DEG = 0.0f;
-static const float WP_COMP_SIGN = -1.0f;
+static const float WP_COMP_SIGN = +1.0f;
 
 static float computeWristPitchForVertical(float sh_deg, float el_deg){
   return WP_OFFSET_DEG + WP_COMP_SIGN * (sh_deg + el_deg);
