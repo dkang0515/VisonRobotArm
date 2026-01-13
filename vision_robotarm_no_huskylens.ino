@@ -85,7 +85,7 @@ static const int16_t GRIPPER_CONTACT_RELEASE_CURRENT = 90;  // raw units: contac
 static const int16_t GRIPPER_GRIP_RELEASE_CURRENT    = 180; // raw units: grip release
 static const uint8_t GRIPPER_CONTACT_COUNT  = 3;   // consecutive samples for contact
 static const uint8_t GRIPPER_GRIP_COUNT     = 4;   // consecutive samples for grip
-static const float GRIPPER_CLOSE_SIGN = +1.0f;     // +1 if increasing deg closes, -1 otherwise
+static const float GRIPPER_CLOSE_SIGN = -1.0f;     // +1 if increasing deg closes, -1 otherwise
 static const bool GRIPPER_CONTACT_WHEN_STATIC = true;
 
 static bool gripper_contact = false;
