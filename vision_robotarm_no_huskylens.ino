@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "HUSKYLENS.h"
+#include <Wire.h>
 
 #if defined(ARDUINO_OpenRB)
   #define DXL_SERIAL Serial1
@@ -17,9 +18,6 @@
 #ifndef BDPIN_DXL_PWR_EN
   #define BDPIN_DXL_PWR_EN 31
 #endif
-
-#define HUSKY_SERIAL Serial2
-static const uint32_t HUSKY_BAUD = 9600;
 
 Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
 HUSKYLENS huskylens;
@@ -873,8 +871,8 @@ void setup(){
   PC_SERIAL.begin(115200);
   while(!PC_SERIAL){}
 
-  HUSKY_SERIAL.begin(HUSKY_BAUD);
-  bool husky_ok = huskylens.begin(HUSKY_SERIAL);
+  Wire.begin();
+  bool husky_ok = huskylens.begin(Wire);
 
   pinMode(BDPIN_DXL_PWR_EN, OUTPUT);
   digitalWrite(BDPIN_DXL_PWR_EN, HIGH);
@@ -919,6 +917,16 @@ static void updateHuskyLens(){
     husky_width = result.width;
     husky_last_seen_ms = millis();
     husky_has_block = true;
+    PC_SERIAL.print("Block:xCenter=");
+    PC_SERIAL.print(husky_x);
+    PC_SERIAL.print(",yCenter=");
+    PC_SERIAL.print(husky_y);
+    PC_SERIAL.print(",width=");
+    PC_SERIAL.print(result.width);
+    PC_SERIAL.print(",height=");
+    PC_SERIAL.print(result.height);
+    PC_SERIAL.print(",ID=");
+    PC_SERIAL.println(result.ID);
   } else {
     husky_has_block = false;
   }
