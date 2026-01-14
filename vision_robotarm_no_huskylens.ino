@@ -917,16 +917,6 @@ static void updateHuskyLens(){
     husky_width = result.width;
     husky_last_seen_ms = millis();
     husky_has_block = true;
-    PC_SERIAL.print("Block:xCenter=");
-    PC_SERIAL.print(husky_x);
-    PC_SERIAL.print(",yCenter=");
-    PC_SERIAL.print(husky_y);
-    PC_SERIAL.print(",width=");
-    PC_SERIAL.print(result.width);
-    PC_SERIAL.print(",height=");
-    PC_SERIAL.print(result.height);
-    PC_SERIAL.print(",ID=");
-    PC_SERIAL.println(result.ID);
   } else {
     husky_has_block = false;
   }
