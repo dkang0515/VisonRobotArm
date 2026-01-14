@@ -121,6 +121,11 @@ static const unsigned long HUSKY_TIMEOUT_MS = 1200;
 // ====================== Timing ======================
 static const unsigned long SEND_PERIOD_MS = 30;
 static const unsigned long SEG_DWELL_MS   = 150;
+static const unsigned long CENTERING_PERIOD_MS = 200;
+
+// ====================== Auto step sizes (deg) ======================
+static const float BASE_STEP_DEG = 2.0f;
+static const float ARM_STEP_DEG  = 1.5f;
 
 // ====================== Control Table Items ======================
 using namespace ControlTableItem;
@@ -591,8 +596,7 @@ static bool auto_active=false;
 static float auto_grip_target = 0.0f;
 static const float AUTO_GRIP_STEP_DEG = 2.0f;
 static const unsigned long AUTO_GRIP_STEP_MS = 200;
-static const float BASE_STEP_DEG = 2.0f;
-static const float SH_EL_STEP_DEG = 1.5f;
+static unsigned long auto_last_step_ms = 0
 
 static void seqStop(){
   seq=SEQ_NONE;
@@ -616,6 +620,7 @@ static void autoStop(){
   auto_state=AUTO_NONE;
   husky_width_ctr=0;
   auto_grip_target=0.0f;
+  auto_last_step_ms=0;
 }
 
 static void autoStart(){
@@ -623,11 +628,14 @@ static void autoStart(){
   auto_state=AUTO_CENTER_X;
   husky_width_ctr=0;
   auto_grip_target=q_cur[J_G];
+  auto_last_step_ms=0;
 }
 
 static void autoUpdate(){
   if (!auto_active) return;
   if (motion_active) return;
+  unsigned long now = millis();
+  if (now - auto_last_step_ms < CENTERING_PERIOD_MS) return;
 
   switch (auto_state){
     case AUTO_CENTER_X: {
@@ -637,8 +645,14 @@ static void autoUpdate(){
         return;
       }
       float step = (x_error > 0 ? BASE_STEP_DEG : -BASE_STEP_DEG) * BASE_DIR;
-      float base = q_cur[J_BASE] + step;
-      startMoveSegmented(base, q_cur[J_SH], q_cur[J_EL], q_cur[J_WP], q_cur[J_WY], q_cur[J_G], 600);
+      float target[6] = {
+        q_cur[J_BASE] + step, q_cur[J_SH], q_cur[J_EL],
+        q_cur[J_WP], q_cur[J_WY], q_cur[J_G]
+      };
+      applySoftLimits(target);
+      startMoveSegmented(target[J_BASE], target[J_SH], target[J_EL], target[J_WP],
+                         target[J_WY], target[J_G], 600);
+      auto_last_step_ms = now;
       break;
     }
     case AUTO_CENTER_Y: {
@@ -648,9 +662,14 @@ static void autoUpdate(){
         auto_state = AUTO_CLOSE;
         return;
       }
-      float sh = q_cur[J_SH] - SH_EL_STEP_DEG;
-      float el = q_cur[J_EL] - SH_EL_STEP_DEG;
-      startMoveSegmented(q_cur[J_BASE], sh, el, q_cur[J_WP], q_cur[J_WY], q_cur[J_G], 600);
+      float target[6] = {
+        q_cur[J_BASE], q_cur[J_SH] - ARM_STEP_DEG, q_cur[J_EL] - ARM_STEP_DEG,
+        q_cur[J_WP], q_cur[J_WY], q_cur[J_G]
+      };
+      applySoftLimits(target);
+      startMoveSegmented(target[J_BASE], target[J_SH], target[J_EL], target[J_WP],
+                         target[J_WY], target[J_G], 600);
+      auto_last_step_ms = now;
       break;
     }
     case AUTO_CLOSE: {
@@ -667,6 +686,7 @@ static void autoUpdate(){
       auto_grip_target = next_target;
       startMoveSegmented(q_cur[J_BASE], q_cur[J_SH], q_cur[J_EL], q_cur[J_WP], q_cur[J_WY],
                          auto_grip_target, AUTO_GRIP_STEP_MS);
+      auto_last_step_ms = now;
       break;
     }
     default:
