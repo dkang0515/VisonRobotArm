@@ -581,16 +581,17 @@ static uint8_t seq_step=0;
 
 // ====================== Auto width->grip state machine ======================
 static const uint8_t AUTO_NONE=0;
-static const uint8_t AUTO_APPROACH=1;
-static const uint8_t AUTO_CLOSE=2;
-static const uint8_t AUTO_LIFT=3;
-static const uint8_t AUTO_RETURN=4;
+static const uint8_t AUTO_CENTER_X=1;
+static const uint8_t AUTO_CENTER_Y=2;
+static const uint8_t AUTO_CLOSE=3;
 static uint8_t auto_state=AUTO_NONE;
 static bool auto_active=false;
-static bool auto_approach_started=false;
 static float auto_grip_target = 0.0f;
 static const float AUTO_GRIP_STEP_DEG = 2.0f;
 static const unsigned long AUTO_GRIP_STEP_MS = 200;
+static const int16_t AUTO_CENTER_TOL = 10;
+static const float BASE_STEP_DEG = 2.0f;
+static const float SH_EL_STEP_DEG = 1.5f;
 
 static void seqStop(){
   seq=SEQ_NONE;
@@ -612,15 +613,13 @@ static void seqStartPick(){
 static void autoStop(){
   auto_active=false;
   auto_state=AUTO_NONE;
-  auto_approach_started=false;
   husky_width_ctr=0;
   auto_grip_target=0.0f;
 }
 
 static void autoStart(){
   auto_active=true;
-  auto_state=AUTO_APPROACH;
-  auto_approach_started=false;
+  auto_state=AUTO_CENTER_X;
   husky_width_ctr=0;
   auto_grip_target=q_cur[J_G];
 }
@@ -630,35 +629,48 @@ static void autoUpdate(){
   if (motion_active) return;
 
   switch (auto_state){
-    case AUTO_APPROACH:
-      if (!auto_approach_started){
-        startMoveSegmented(0,+25,-35,0,0,0, 2000); // DOWN/APPROACH
-        auto_approach_started=true;
+    case AUTO_CENTER_X: {
+      int16_t x_error = husky_x - HUSKY_CENTER_X;
+      if (abs(x_error) <= AUTO_CENTER_TOL){
+        auto_state = AUTO_CENTER_Y;
         return;
       }
+      float step = (x_error > 0 ? BASE_STEP_DEG : -BASE_STEP_DEG) * BASE_DIR;
+      float base = q_cur[J_BASE] + step;
+      startMoveSegmented(base, q_cur[J_SH], q_cur[J_EL], q_cur[J_WP], q_cur[J_WY], q_cur[J_G], 600);
+      break;
+    }
+    case AUTO_CENTER_Y: {
       if (husky_width_ctr >= HUSKY_WIDTH_COUNT){
         auto_grip_target = q_cur[J_G];
-        startMoveSegmented(0,+25,-35,0,0,auto_grip_target, AUTO_GRIP_STEP_MS);
-        auto_state=AUTO_CLOSE;
+        auto_state = AUTO_CLOSE;
+        return;
       }
+      int16_t y_error = husky_y - HUSKY_CENTER_Y;
+      if (abs(y_error) <= AUTO_CENTER_TOL){
+        break;
+      }
+      float sh = q_cur[J_SH] - SH_EL_STEP_DEG;
+      float el = q_cur[J_EL] - SH_EL_STEP_DEG;
+      startMoveSegmented(q_cur[J_BASE], sh, el, q_cur[J_WP], q_cur[J_WY], q_cur[J_G], 600);
       break;
-    case AUTO_CLOSE:
+    }
+    case AUTO_CLOSE: {
       if (gripper_grip){
-        startMoveSegmented(0,+15,-20,0,0,+15, 1800); // LIFT
-        auto_state=AUTO_LIFT;
-      } else {
-        auto_grip_target = clampf(auto_grip_target + (AUTO_GRIP_STEP_DEG * GRIPPER_CLOSE_SIGN),
-                                  LIM_MIN[J_G], LIM_MAX[J_G]);
-        startMoveSegmented(0,+25,-35,0,0,auto_grip_target, AUTO_GRIP_STEP_MS);
+        autoStop();
+        break;
       }
+      float next_target = clampf(auto_grip_target + (AUTO_GRIP_STEP_DEG * GRIPPER_CLOSE_SIGN),
+                                 LIM_MIN[J_G], LIM_MAX[J_G]);
+      if (next_target == auto_grip_target){
+        autoStop();
+        break;
+      }
+      auto_grip_target = next_target;
+      startMoveSegmented(q_cur[J_BASE], q_cur[J_SH], q_cur[J_EL], q_cur[J_WP], q_cur[J_WY],
+                         auto_grip_target, AUTO_GRIP_STEP_MS);
       break;
-    case AUTO_LIFT:
-      startMoveSegmented(0,0,0,0,0,+15, 1600); // RETURN
-      auto_state=AUTO_RETURN;
-      break;
-    case AUTO_RETURN:
-      autoStop();
-      break;
+    }
     default:
       autoStop();
       break;
