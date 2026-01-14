@@ -881,6 +881,9 @@ void setup(){
 
   Wire.begin();
   bool husky_ok = huskylens.begin(Wire);
+  if (husky_ok) {
+    huskylens.writeAlgorithm(ALGORITHM_COLOR_RECOGNITION);
+  }
 
   pinMode(BDPIN_DXL_PWR_EN, OUTPUT);
   digitalWrite(BDPIN_DXL_PWR_EN, HIGH);
@@ -916,13 +919,28 @@ static void updateHuskyLens(){
     return;
   }
 
-  HUSKYLENSResult result = huskylens.read();
-  if (result.command == COMMAND_RETURN_BLOCK) {
-    husky_x = result.xCenter;
-    husky_y = result.yCenter;
+  int best_area = -1;
+  bool found = false;
+
+  while (huskylens.available()) {
+    HUSKYLENSResult result = huskylens.read();
+    if (result.command != COMMAND_RETURN_BLOCK) {
+      continue;
+    }
+
+    int area = result.width * result.height;
+    if (area > best_area) {
+      best_area = area;
+      husky_x = result.xCenter;
+      husky_y = result.yCenter;
+      husky_width = result.width;
+      found = true;
+    }
+  }
+
+  if (found) {
     husky_x_err = husky_x - HUSKY_CENTER_X;
     husky_y_err = husky_y - HUSKY_CENTER_Y;
-    husky_width = result.width;
     husky_last_seen_ms = millis();
     husky_has_block = true;
   } else {
