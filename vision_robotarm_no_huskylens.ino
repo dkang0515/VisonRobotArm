@@ -646,10 +646,6 @@ static void autoUpdate(){
         auto_state = AUTO_CLOSE;
         return;
       }
-      int16_t y_error = husky_y - HUSKY_CENTER_Y;
-      if (abs(y_error) <= AUTO_CENTER_TOL){
-        break;
-      }
       float sh = q_cur[J_SH] - SH_EL_STEP_DEG;
       float el = q_cur[J_EL] - SH_EL_STEP_DEG;
       startMoveSegmented(q_cur[J_BASE], sh, el, q_cur[J_WP], q_cur[J_WY], q_cur[J_G], 600);
