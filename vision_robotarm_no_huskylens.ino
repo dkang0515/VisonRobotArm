@@ -104,6 +104,8 @@ static bool gripper_moving  = false;
 // ====================== HuskyLens width trigger (simulated input) ======================
 static const int16_t HUSKY_CENTER_X = 160;
 static const int16_t HUSKY_CENTER_Y = 120;
+static const int16_t HUSKY_DEADBAND_X = 10;
+static const int16_t HUSKY_DEADBAND_Y = 10;
 static int16_t husky_x = 0;
 static int16_t husky_y = 0;
 static int16_t husky_x_err = 0;
@@ -589,7 +591,6 @@ static bool auto_active=false;
 static float auto_grip_target = 0.0f;
 static const float AUTO_GRIP_STEP_DEG = 2.0f;
 static const unsigned long AUTO_GRIP_STEP_MS = 200;
-static const int16_t AUTO_CENTER_TOL = 10;
 static const float BASE_STEP_DEG = 2.0f;
 static const float SH_EL_STEP_DEG = 1.5f;
 
@@ -631,7 +632,7 @@ static void autoUpdate(){
   switch (auto_state){
     case AUTO_CENTER_X: {
       int16_t x_error = husky_x - HUSKY_CENTER_X;
-      if (abs(x_error) <= AUTO_CENTER_TOL){
+      if (abs(x_error) <= HUSKY_DEADBAND_X){
         auto_state = AUTO_CENTER_Y;
         return;
       }
@@ -641,7 +642,8 @@ static void autoUpdate(){
       break;
     }
     case AUTO_CENTER_Y: {
-      if (husky_width_ctr >= HUSKY_WIDTH_COUNT){
+      int16_t y_error = husky_y - HUSKY_CENTER_Y;
+      if (abs(y_error) <= HUSKY_DEADBAND_Y && husky_width_ctr >= HUSKY_WIDTH_COUNT){
         auto_grip_target = q_cur[J_G];
         auto_state = AUTO_CLOSE;
         return;
