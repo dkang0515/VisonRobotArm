@@ -69,7 +69,7 @@ static inline int32_t degToRaw(float deg){
 }
 
 // ====================== Soft limits (deg, relative) ======================
-static const float LIM_MIN[6] = { -60, -45, -60, -60, -90, -40 };
+static const float LIM_MIN[6] = { -60, -45, -60, -60, -90, -100 };
 static const float LIM_MAX[6] = { +60, +45, +60, +60, +90, +40 };
 
 // ====================== Power-safe: per-joint profile (vel/acc) ======================
@@ -109,7 +109,7 @@ static int16_t husky_y = 0;
 static int16_t husky_x_err = 0;
 static int16_t husky_y_err = 0;
 static int16_t husky_width = 0;
-static const int16_t HUSKY_WIDTH_TRIGGER = 240;
+static const int16_t HUSKY_WIDTH_TRIGGER = 300;
 static const uint8_t HUSKY_WIDTH_COUNT = 3;
 static uint8_t husky_width_ctr = 0;
 static bool husky_has_block = false;
