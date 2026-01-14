@@ -106,6 +106,7 @@ static const int16_t HUSKY_CENTER_X = 160;
 static const int16_t HUSKY_CENTER_Y = 120;
 static const int16_t HUSKY_DEADBAND_X = 10;
 static const int16_t HUSKY_DEADBAND_Y = 10;
+static const int16_t HUSKY_RECENTER_X = HUSKY_DEADBAND_X * 2;
 static int16_t husky_x = 0;
 static int16_t husky_y = 0;
 static int16_t husky_x_err = 0;
@@ -657,6 +658,11 @@ static void autoUpdate(){
       break;
     }
     case AUTO_CENTER_Y: {
+      int16_t x_error = husky_x - HUSKY_CENTER_X;
+      if (abs(x_error) > HUSKY_RECENTER_X){
+        auto_state = AUTO_CENTER_X;
+        return;
+      }
       int16_t y_error = husky_y - HUSKY_CENTER_Y;
       if (abs(y_error) <= HUSKY_DEADBAND_Y && husky_width_ctr >= HUSKY_WIDTH_COUNT){
         auto_grip_target = q_cur[J_G];
