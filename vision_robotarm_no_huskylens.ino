@@ -591,12 +591,13 @@ static const uint8_t AUTO_NONE=0;
 static const uint8_t AUTO_CENTER_X=1;
 static const uint8_t AUTO_CENTER_Y=2;
 static const uint8_t AUTO_CLOSE=3;
+static const uint8_t AUTO_RETURN_HOME=4;
 static uint8_t auto_state=AUTO_NONE;
 static bool auto_active=false;
 static float auto_grip_target = 0.0f;
 static const float AUTO_GRIP_STEP_DEG = 2.0f;
 static const unsigned long AUTO_GRIP_STEP_MS = 200;
-static unsigned long auto_last_step_ms = 0
+static unsigned long auto_last_step_ms = 0;
 
 static void seqStop(){
   seq=SEQ_NONE;
@@ -674,7 +675,9 @@ static void autoUpdate(){
     }
     case AUTO_CLOSE: {
       if (gripper_grip){
-        autoStop();
+        auto_state = AUTO_RETURN_HOME;
+        startMoveSegmented(0,0,0,0,0,auto_grip_target, 1800);
+        auto_last_step_ms = now;
         break;
       }
       float next_target = clampf(auto_grip_target + (AUTO_GRIP_STEP_DEG * GRIPPER_CLOSE_SIGN),
@@ -687,6 +690,10 @@ static void autoUpdate(){
       startMoveSegmented(q_cur[J_BASE], q_cur[J_SH], q_cur[J_EL], q_cur[J_WP], q_cur[J_WY],
                          auto_grip_target, AUTO_GRIP_STEP_MS);
       auto_last_step_ms = now;
+      break;
+    }
+    case AUTO_RETURN_HOME: {
+      autoStop();
       break;
     }
     default:
